@@ -59,10 +59,8 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 	st.sidebar.header("Filters")
 	applied = {}
 
-	# Check if filters were just cleared
-	filters_cleared = st.session_state.get('_filters_cleared', False)
-	if filters_cleared:
-		st.session_state._filters_cleared = False
+	# Get or initialize clear counter
+	clear_counter = st.session_state.get('_filter_clear_counter', 0)
 
 	for col, kind in FILTER_COLUMNS.items():
 		if col not in df.columns:
@@ -74,7 +72,7 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 				finite_vals = coerced[np.isfinite(coerced)]
 				if finite_vals.empty:
 					options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}_{clear_counter}")
 					if selected:
 						applied[col] = ("in", selected)
 				else:
@@ -85,46 +83,35 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 						min_value=min_val,
 						max_value=max_val,
 						value=(min_val, max_val),
-						key=f"rng_{col}"
+						key=f"rng_{col}_{clear_counter}"
 					)
 					applied[col] = ("range", (start, end))
 			else:
 				options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}_{clear_counter}")
 				if selected:
 					applied[col] = ("in", selected)
 		elif kind == "text_search":
 			col_key = col.replace(" ", "_").lower()
-			text_val = st.sidebar.text_input(f"{col} contains (comma-separated)", key=f"txt_{col_key}")
+			text_val = st.sidebar.text_input(f"{col} contains (comma-separated)", key=f"txt_{col_key}_{clear_counter}")
 			op = st.sidebar.selectbox(
 				f"{col} operator",
 				["OR", "AND"],
 				index=0,
-				key=f"op_{col_key}"
+				key=f"op_{col_key}_{clear_counter}"
 			)
 			if text_val.strip():
 				tokens = _tokenize(text_val)
 				applied[col] = ("contains_all" if op == "AND" else "contains_any", tokens)
 		else:
 			options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-			selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+			selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}_{clear_counter}")
 			if selected:
 				applied[col] = ("in", selected)
 
 	if st.sidebar.button("Clear filters"):
-		# Clear known session_state keys for filters and force widget reset
-		keys_to_clear = []
-		for col in FILTER_COLUMNS.keys():
-			col_key = col.replace(" ", "_").lower()
-			keys_to_clear.extend([f"ms_{col}", f"rng_{col}", f"txt_{col_key}", f"op_{col_key}"])
-
-		# Clear session state
-		for key in keys_to_clear:
-			if key in st.session_state:
-				del st.session_state[key]
-
-		# Add a marker to indicate filters were cleared
-		st.session_state._filters_cleared = True
+		# Increment clear counter to force widget reset
+		st.session_state._filter_clear_counter = clear_counter + 1
 		st.rerun()
 
 	return applied
