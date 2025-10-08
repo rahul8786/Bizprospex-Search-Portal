@@ -69,32 +69,56 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 				finite_vals = coerced[np.isfinite(coerced)]
 				if finite_vals.empty:
 					options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+					# Reset multiselect if filters were cleared
+					if st.session_state.get('_filters_cleared', False):
+						selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+						# Manually clear the selection in session state
+						if f"ms_{col}" in st.session_state:
+							st.session_state[f"ms_{col}"] = []
+					else:
+						selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
 					if selected:
 						applied[col] = ("in", selected)
 				else:
 					min_val = int(finite_vals.min())
 					max_val = int(finite_vals.max())
+					# Reset slider if filters were cleared
+					if st.session_state.get('_filters_cleared', False):
+						start, end = min_val, max_val
+					else:
+						start, end = st.session_state.get(f"rng_{col}", (min_val, max_val))
 					start, end = st.sidebar.slider(
 						f"{col} range",
 						min_value=min_val,
 						max_value=max_val,
-						value=(min_val, max_val),
+						value=(start, end),
 						key=f"rng_{col}"
 					)
 					applied[col] = ("range", (start, end))
 			else:
 				options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+				# Reset multiselect if filters were cleared
+				if st.session_state.get('_filters_cleared', False):
+					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+					# Manually clear the selection in session state
+					if f"ms_{col}" in st.session_state:
+						st.session_state[f"ms_{col}"] = []
+				else:
+					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
 				if selected:
 					applied[col] = ("in", selected)
 		elif kind == "text_search":
 			col_key = col.replace(" ", "_").lower()
-			text_val = st.sidebar.text_input(f"{col} contains (comma-separated)", key=f"txt_{col_key}")
+			# Reset text input if filters were cleared
+			default_text = "" if st.session_state.get('_filters_cleared', False) else st.session_state.get(f"txt_{col_key}", "")
+			text_val = st.sidebar.text_input(f"{col} contains (comma-separated)", value=default_text, key=f"txt_{col_key}")
+
+			# Reset selectbox if filters were cleared
+			default_op = "OR" if st.session_state.get('_filters_cleared', False) else st.session_state.get(f"op_{col_key}", "OR")
 			op = st.sidebar.selectbox(
 				f"{col} operator",
 				["OR", "AND"],
-				index=0,
+				index=0 if default_op == "OR" else 1,
 				key=f"op_{col_key}"
 			)
 			if text_val.strip():
@@ -102,17 +126,31 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 				applied[col] = ("contains_all" if op == "AND" else "contains_any", tokens)
 		else:
 			options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-			selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+			# Reset multiselect if filters were cleared
+			if st.session_state.get('_filters_cleared', False):
+				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+				# Manually clear the selection in session state
+				if f"ms_{col}" in st.session_state:
+					st.session_state[f"ms_{col}"] = []
+			else:
+				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
 			if selected:
 				applied[col] = ("in", selected)
 
 	if st.sidebar.button("Clear filters"):
-		# Clear known session_state keys for filters and rerun
+		# Clear known session_state keys for filters and force widget reset
+		keys_to_clear = []
 		for col in FILTER_COLUMNS.keys():
 			col_key = col.replace(" ", "_").lower()
-			for key in (f"ms_{col}", f"rng_{col}", f"txt_{col_key}", f"op_{col_key}"):
-				if key in st.session_state:
-					del st.session_state[key]
+			keys_to_clear.extend([f"ms_{col}", f"rng_{col}", f"txt_{col_key}", f"op_{col_key}"])
+
+		# Clear session state
+		for key in keys_to_clear:
+			if key in st.session_state:
+				del st.session_state[key]
+
+		# Add a marker to indicate filters were cleared
+		st.session_state._filters_cleared = True
 		st.rerun()
 
 	return applied
