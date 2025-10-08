@@ -59,6 +59,11 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 	st.sidebar.header("Filters")
 	applied = {}
 
+	# Check if filters were just cleared
+	filters_cleared = st.session_state.get('_filters_cleared', False)
+	if filters_cleared:
+		st.session_state._filters_cleared = False
+
 	for col, kind in FILTER_COLUMNS.items():
 		if col not in df.columns:
 			continue
@@ -69,56 +74,32 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 				finite_vals = coerced[np.isfinite(coerced)]
 				if finite_vals.empty:
 					options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-					# Reset multiselect if filters were cleared
-					if st.session_state.get('_filters_cleared', False):
-						selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
-						# Manually clear the selection in session state
-						if f"ms_{col}" in st.session_state:
-							st.session_state[f"ms_{col}"] = []
-					else:
-						selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
 					if selected:
 						applied[col] = ("in", selected)
 				else:
 					min_val = int(finite_vals.min())
 					max_val = int(finite_vals.max())
-					# Reset slider if filters were cleared
-					if st.session_state.get('_filters_cleared', False):
-						start, end = min_val, max_val
-					else:
-						start, end = st.session_state.get(f"rng_{col}", (min_val, max_val))
 					start, end = st.sidebar.slider(
 						f"{col} range",
 						min_value=min_val,
 						max_value=max_val,
-						value=(start, end),
+						value=(min_val, max_val),
 						key=f"rng_{col}"
 					)
 					applied[col] = ("range", (start, end))
 			else:
 				options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-				# Reset multiselect if filters were cleared
-				if st.session_state.get('_filters_cleared', False):
-					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
-					# Manually clear the selection in session state
-					if f"ms_{col}" in st.session_state:
-						st.session_state[f"ms_{col}"] = []
-				else:
-					selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
 				if selected:
 					applied[col] = ("in", selected)
 		elif kind == "text_search":
 			col_key = col.replace(" ", "_").lower()
-			# Reset text input if filters were cleared
-			default_text = "" if st.session_state.get('_filters_cleared', False) else st.session_state.get(f"txt_{col_key}", "")
-			text_val = st.sidebar.text_input(f"{col} contains (comma-separated)", value=default_text, key=f"txt_{col_key}")
-
-			# Reset selectbox if filters were cleared
-			default_op = "OR" if st.session_state.get('_filters_cleared', False) else st.session_state.get(f"op_{col_key}", "OR")
+			text_val = st.sidebar.text_input(f"{col} contains (comma-separated)", key=f"txt_{col_key}")
 			op = st.sidebar.selectbox(
 				f"{col} operator",
 				["OR", "AND"],
-				index=0 if default_op == "OR" else 1,
+				index=0,
 				key=f"op_{col_key}"
 			)
 			if text_val.strip():
@@ -126,14 +107,7 @@ def build_sidebar_filters(df: pd.DataFrame) -> dict:
 				applied[col] = ("contains_all" if op == "AND" else "contains_any", tokens)
 		else:
 			options = sorted([v for v in df[col].dropna().unique().tolist() if v != ""])
-			# Reset multiselect if filters were cleared
-			if st.session_state.get('_filters_cleared', False):
-				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
-				# Manually clear the selection in session state
-				if f"ms_{col}" in st.session_state:
-					st.session_state[f"ms_{col}"] = []
-			else:
-				selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
+			selected = st.sidebar.multiselect(f"{col}", options, key=f"ms_{col}")
 			if selected:
 				applied[col] = ("in", selected)
 
