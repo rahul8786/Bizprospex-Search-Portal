@@ -173,10 +173,23 @@ def main() -> None:
 			help="Paste the published CSV URL from your Google Sheet"
 		)
 
+		# Add refresh button for data updates
+		if st.button("🔄 Refresh Data", help="Click to reload data from Google Sheets"):
+			load_csv_from_url.clear()  # Clear the cache
+			st.success("✅ Data refreshed! Check the latest updates below.")
+			st.rerun()
+
+		# Show last update info
+		if 'last_refresh' in st.session_state:
+			st.caption(f"📅 Last updated: {st.session_state.last_refresh}")
+
 	df = load_data(csv_input.strip() or None)
 	if df.empty:
 		st.info("No data available.")
 		return
+
+	# Store refresh timestamp
+	st.session_state.last_refresh = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
 	filters = build_sidebar_filters(df)
 	filtered = apply_filters(df, filters)
