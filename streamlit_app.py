@@ -8,12 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-try:
-	import gspread  # type: ignore
-	from google.oauth2.service_account import Credentials  # type: ignore
-except Exception:
-	gspread = None
-	Credentials = None
+# Removed Google service account imports - no longer needed!
 
 
 # -----------------------------
@@ -37,62 +32,7 @@ def load_csv_from_url(csv_url: str) -> pd.DataFrame:
 	return df
 
 
-def _read_secret_env(name: str) -> Optional[str]:
-	"""Read from environment first; only hit st.secrets if a secrets.toml exists."""
-	value = os.getenv(name)
-	if value:
-		return value
-
-	# Check for a secrets.toml before touching st.secrets to avoid noisy warnings
-	home_secrets = os.path.join(os.path.expanduser("~"), ".streamlit", "secrets.toml")
-	cwd_secrets = os.path.join(os.getcwd(), ".streamlit", "secrets.toml")
-	secrets_exists = os.path.exists(home_secrets) or os.path.exists(cwd_secrets)
-	if secrets_exists:
-		try:
-			return st.secrets.get(name)  # type: ignore[attr-defined]
-		except Exception:
-			return None
-	return None
-
-
-@st.cache_data(show_spinner=False)
-def load_sheet_via_service_account(
-	sa_json: str, sheet_id: str, gid: Optional[str]
-) -> pd.DataFrame:
-	if gspread is None or Credentials is None:
-		raise RuntimeError("Google client libraries missing. Install requirements.")
-
-	if sa_json.strip().startswith("{"):
-		creds_info = json.loads(sa_json)
-	else:
-		# If it's a path or base64
-		if os.path.exists(sa_json):
-			with open(sa_json, "r", encoding="utf-8") as f:
-				creds_info = json.load(f)
-		else:
-			try:
-				decoded = base64.b64decode(sa_json).decode("utf-8")
-				creds_info = json.loads(decoded)
-			except Exception as e:
-				raise RuntimeError("Invalid GOOGLE_SERVICE_ACCOUNT_JSON content") from e
-
-	scopes = [
-		"https://www.googleapis.com/auth/spreadsheets.readonly",
-		"https://www.googleapis.com/auth/drive.readonly",
-	]
-	credentials = Credentials.from_service_account_info(creds_info, scopes=scopes)
-	client = gspread.authorize(credentials)
-	sh = client.open_by_key(sheet_id)
-
-	if gid:
-		# gspread doesn't open by gid directly; get worksheet by gid
-		ws = next((w for w in sh.worksheets() if str(w.id) == str(gid)), sh.sheet1)
-	else:
-		ws = sh.sheet1
-
-	rows = ws.get_all_records()
-	df = pd.DataFrame(rows)
-	return df
+# Removed service account functions - no longer needed for public CSV URLs!
 
 
 def coerce_numeric(series: pd.Series) -> Tuple[pd.Series, bool]:
@@ -205,25 +145,19 @@ def to_csv_bytes(df: pd.DataFrame) -> bytes:
 	return buf.getvalue().encode("utf-8")
 
 
-def load_data(csv_override: Optional[str] = None) -> pd.DataFrame:
-	# Try CSV first (UI override takes precedence)
-	csv_url = csv_override or _read_secret_env("GOOGLE_SHEET_CSV_URL")
-	if csv_url:
-		try:
-			df = load_csv_from_url(csv_url)
-			return normalize_dataframe(df)
-		except Exception as e:
-			st.warning(f"Failed loading published CSV: {e}")
+def load_data(csv_url: Optional[str] = None) -> pd.DataFrame:
+	"""Load data from user-provided CSV URL only."""
+	if not csv_url or not csv_url.strip():
+		st.info("👆 Please enter a Google Sheets CSV URL in the sidebar to load data.")
+		st.stop()
 
-	# Fallback to service account
-	sa_json = _read_secret_env("GOOGLE_SERVICE_ACCOUNT_JSON")
-	sheet_id = _read_secret_env("GOOGLE_SHEET_ID")
-	gid = _read_secret_env("GOOGLE_SHEET_GID")
-	if sa_json and sheet_id:
-		df = load_sheet_via_service_account(sa_json, sheet_id, gid)
+	try:
+		df = load_csv_from_url(csv_url)
 		return normalize_dataframe(df)
-
-	st.stop()
+	except Exception as e:
+		st.error(f"❌ Failed to load data from URL: {e}")
+		st.info("💡 Make sure the Google Sheet is published to web as CSV (File → Share → Publish to web)")
+		st.stop()
 
 
 def main() -> None:
@@ -231,12 +165,13 @@ def main() -> None:
 	st.title(APP_TITLE)
 
 	with st.sidebar:
-		st.subheader("Data source")
+		st.subheader("🔗 Data Source")
+		st.info("📋 To use this app: Open your Google Sheet → File → Share → Publish to web → CSV → Copy URL below")
+
 		csv_input = st.text_input(
-			"Published CSV URL",
-			value=_read_secret_env("GOOGLE_SHEET_CSV_URL") or "",
-			placeholder="https://docs.google.com/spreadsheets/d/<SHEET_ID>/export?format=csv&gid=<GID>",
-			help="Paste the published CSV URL from Google Sheets (File → Share → Publish to web → CSV)",
+			"Google Sheets CSV URL *",
+			placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv",
+			help="Paste the published CSV URL from your Google Sheet"
 		)
 
 	df = load_data(csv_input.strip() or None)
